@@ -44,20 +44,22 @@ public final class AudioManager {
         let fname = SoundBank.fileName(for: name)
         if let res = Bundle.main.resourcePath {
             let fm = FileManager.default
-            let p1 = (res as NSString).appendingPathComponent(fname)
-            if fm.fileExists(atPath: p1) {
-                if playPath(path: p1) {
-                    return true
-                }
-            }
-            let p2 = (res as NSString).appendingPathComponent("Audio/" + fname)
-            if fm.fileExists(atPath: p2) {
-                if playPath(path: p2) {
-                    return true
+            let rels: [String] = [fname, "Audio/" + fname, "Resources/Audio/" + fname, "Resources/" + fname]
+            for rel in rels {
+                let p = (res as NSString).appendingPathComponent(rel)
+                if fm.fileExists(atPath: p) {
+                    if playPath(path: p) {
+                        return true
+                    }
                 }
             }
         }
         if let url = Bundle.main.url(forResource: (fname as NSString).deletingPathExtension, withExtension: "wav") {
+            if playURL(url: url) {
+                return true
+            }
+        }
+        if let url = Bundle.main.url(forResource: (fname as NSString).deletingPathExtension, withExtension: "wav", subdirectory: "Audio") {
             if playURL(url: url) {
                 return true
             }

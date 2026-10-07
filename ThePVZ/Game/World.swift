@@ -22,6 +22,8 @@ final class World {
         scene.rootNode.addChildNode(beam.node)
         let room = RoomBuilder.buildRoom()
         scene.rootNode.addChildNode(room)
+        let props = PropsBuilder.buildPVZProps()
+        scene.rootNode.addChildNode(props)
         monitor = MonitorScreen()
         scene.rootNode.addChildNode(monitor.node)
         let alarm = RoomBuilder.buildAlarmButton()

@@ -21,24 +21,27 @@ public enum Fonts {
         guard let res = Bundle.main.resourcePath else {
             return
         }
-        let fontsDir = (res as NSString).appendingPathComponent("Fonts")
-        var isDir: ObjCBool = false
-        let exists = fm.fileExists(atPath: fontsDir, isDirectory: &isDir)
-        if exists == false || isDir.boolValue == false {
-            return
-        }
-        guard let files = try? fm.contentsOfDirectory(atPath: fontsDir) else {
-            return
-        }
-        for name in files {
-            let lower = name.lowercased()
-            let isFont: Bool = lower.hasSuffix(".otf") || lower.hasSuffix(".ttf")
-            if isFont == false {
+        let candidates: [String] = ["Fonts", "Resources/Fonts"]
+        for rel in candidates {
+            let fontsDir = (res as NSString).appendingPathComponent(rel)
+            var isDir: ObjCBool = false
+            let exists = fm.fileExists(atPath: fontsDir, isDirectory: &isDir)
+            if exists == false || isDir.boolValue == false {
                 continue
             }
-            let full = (fontsDir as NSString).appendingPathComponent(name)
-            let url = URL(fileURLWithPath: full)
-            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            guard let files = try? fm.contentsOfDirectory(atPath: fontsDir) else {
+                continue
+            }
+            for name in files {
+                let lower = name.lowercased()
+                let isFont: Bool = lower.hasSuffix(".otf") || lower.hasSuffix(".ttf")
+                if isFont == false {
+                    continue
+                }
+                let full = (fontsDir as NSString).appendingPathComponent(name)
+                let url = URL(fileURLWithPath: full)
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
         }
     }
 
@@ -101,7 +104,10 @@ public enum Fonts {
     }
 
     private static func montserrat(role: FontRole, size: CGFloat) -> UIFont? {
-        let names: [String] = namesFor(role: role, family: "Montserrat")
+        var names: [String] = namesFor(role: role, family: "Montserrat")
+        names.append("Montserrat")
+        names.append("Montserrat-Regular")
+        names.append("Montserrat-Variable")
         for n in names {
             if let f = UIFont(name: n, size: size) {
                 return f

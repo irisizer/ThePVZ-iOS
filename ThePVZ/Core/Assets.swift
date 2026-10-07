@@ -12,17 +12,19 @@ public enum Assets {
     public static func bundledImage(named: String) -> UIImage? {
         let fm = FileManager.default
         if let res = Bundle.main.resourcePath {
-            let p1 = (res as NSString).appendingPathComponent(named)
-            if fm.fileExists(atPath: p1) {
-                if let img = UIImage(contentsOfFile: p1) {
-                    return img
+            let rels: [String] = [named, "Textures/" + named, "Resources/Textures/" + named, "Resources/" + named]
+            for rel in rels {
+                let p = (res as NSString).appendingPathComponent(rel)
+                if fm.fileExists(atPath: p) {
+                    if let img = UIImage(contentsOfFile: p) {
+                        return img
+                    }
                 }
             }
-            let p2 = (res as NSString).appendingPathComponent("Textures/" + named)
-            if fm.fileExists(atPath: p2) {
-                if let img = UIImage(contentsOfFile: p2) {
-                    return img
-                }
+        }
+        if let url = Bundle.main.url(forResource: (named as NSString).deletingPathExtension, withExtension: (named as NSString).pathExtension, subdirectory: "Textures") {
+            if let img = UIImage(contentsOfFile: url.path) {
+                return img
             }
         }
         return UIImage(named: named)
