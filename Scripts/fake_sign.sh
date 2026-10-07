@@ -189,14 +189,14 @@ SIGNID="$IDN"
 if [ -n "${HASH:-}" ]; then
   SIGNID="$HASH"
 fi
-if codesign --force --sign "$SIGNID" --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/sign-err.log" && slot5 "$BIN"; then
+if codesign --force --deep --sign "$SIGNID" --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/sign-err.log" && slot5 "$BIN"; then
   echo "fake_sign: подписано identity ($SIGNID), слот 5 есть"
   codesign -dv "$APP_ABS" 2>&1 | head -n 5 || true
   exit 0
 fi
 warn "fake_sign: identity не удался ($(head -c 300 "$WORK/sign-err.log")). Пробую ad-hoc+ent."
 
-if codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/adhoc-err.log" && slot5 "$BIN"; then
+if codesign --force --deep --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/adhoc-err.log" && slot5 "$BIN"; then
   echo "fake_sign: подписано ad-hoc+entitlements, слот 5 есть"
   exit 0
 fi
