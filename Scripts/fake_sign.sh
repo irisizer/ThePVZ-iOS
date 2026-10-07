@@ -183,6 +183,12 @@ except Exception:
 PYEOF2
 }
 
+HASH=$(security find-certificate -a -Z "$KC" 2>/dev/null | grep -m1 "SHA-1" | awk '{print $NF}')
+echo "fake_sign: cert hash: ${HASH:-none}"
+SIGNID="$IDN"
+if [ -n "${HASH:-}" ]; then
+  SIGNID="$HASH"
+fi
 if codesign --force --sign "$SIGNID" --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/sign-err.log" && slot5 "$BIN"; then
   echo "fake_sign: подписано identity ($SIGNID), слот 5 есть"
   codesign -dv "$APP_ABS" 2>&1 | head -n 5 || true
