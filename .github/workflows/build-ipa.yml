@@ -50,22 +50,18 @@ jobs:
           command -v xcbeautify >/dev/null && FMT=xcbeautify
           xcodebuild -project ThePVZ.xcodeproj -scheme ThePVZ -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO CURRENT_PROJECT_VERSION=${{ github.run_number }} build 2>&1 | tee build.log | $FMT
 
+      - name: Fake sign (как у Telegram)
+        run: |
+          chmod +x Scripts/fake_sign.sh
+          Scripts/fake_sign.sh "$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)" "${{ github.run_number }}" "com.esyle.thepvz"
+
       - name: Package IPA
         run: |
           set -euo pipefail
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)
           test -d "$APP"
-          BIN="$APP/$APP_NAME"
-          test -f "$BIN"
-          chmod +x "$BIN"
-          find "$APP" -name '.gitkeep' -delete || true
-          rm -f "$APP/Resources/Fonts/OFL.txt" || true
+          test -f "$APP/$APP_NAME"
           rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
-          if command -v ldid >/dev/null 2>&1; then
-            ldid -S "Payload/$APP_NAME.app" || true
-          else
-            codesign --force --sign - --deep --timestamp=none "Payload/$APP_NAME.app" || true
-          fi
           /usr/bin/zip -qry "$APP_NAME-${{ github.run_number }}.ipa" Payload
 
       - name: Smoke checks
@@ -76,6 +72,9 @@ jobs:
           test -x $P/$APP_NAME
           lipo -archs $P/$APP_NAME | grep arm64
           codesign -dv $P 2>&1 | head -n 5 || true
+          codesign -d --entitlements :- $P 2>&1 | head -n 20 || true
+          test -f $P/embedded.mobileprovision
+          test -d $P/_CodeSignature
           plutil -extract UIApplicationSceneManifest xml1 -o - $P/Info.plist > /dev/null
           plutil -extract UILaunchScreen xml1 -o - $P/Info.plist > /dev/null
           find $P -name pvz_screen.png | grep . || echo '::warning::pvz_screen.png не найден, будет запасная текстура'

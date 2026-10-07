@@ -33,6 +33,8 @@ targets:
       path: Support/Info.plist
       properties:
         CFBundleDisplayName: The PVZ
+        CFBundleSignature: '????'
+        LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         UIRequiresFullScreen: true
