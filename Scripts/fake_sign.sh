@@ -149,12 +149,19 @@ if security create-keychain -p thepvz "$KC" >/dev/null 2>&1; then
   security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k thepvz "$KC" >/dev/null 2>&1 || true
   echo "fake_sign: identities в keychain:"
   security find-identity -v -p codesigning "$KC" 2>&1 | head -n 5 || true
+  security find-identity -v "$KC" 2>&1 | head -n 5 || true
 else
   warn "fake_sign: keychain не создался, пробую login-keychain"
 fi
 
-# 4. Подпись.
-if codesign --force --sign "$IDN" --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/sign-err.log"; then
+# 4. Подпись (--entitlements всегда, чтобы слот 5 был; по хешу надёжнее имени).
+HASH=$(security find-certificate -a -Z "$KC" 2>/dev/null | grep -m1 "SHA-1" | awk '{print $NF}')
+echo "fake_sign: cert hash: ${HASH:-none}"
+SIGNID="$IDN"
+if [ -n "${HASH:-}" ]; then
+  SIGNID="$HASH"
+fi
+if codesign --force --sign "$SIGNID" --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/sign-err.log"; then
   echo "fake_sign: подписано $IDN"
   codesign -dv "$APP_ABS" 2>&1 | head -n 5 || true
 else
