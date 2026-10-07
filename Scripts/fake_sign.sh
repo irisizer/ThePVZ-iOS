@@ -154,28 +154,57 @@ else
   warn "fake_sign: keychain не создался, пробую login-keychain"
 fi
 
-# 4. Подпись (--entitlements всегда, чтобы слот 5 был; по хешу надёжнее имени).
-HASH=$(security find-certificate -a -Z "$KC" 2>/dev/null | grep -m1 "SHA-1" | awk '{print $NF}')
-echo "fake_sign: cert hash: ${HASH:-none}"
-SIGNID="$IDN"
-if [ -n "${HASH:-}" ]; then
-  SIGNID="$HASH"
-fi
-if codesign --force --sign "$SIGNID" --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/sign-err.log"; then
-  echo "fake_sign: подписано $IDN"
+# 4. Подпись. Порядок (первый давший слот 5 побеждает):
+# identity -> ad-hoc+ent -> ad-hoc seal + ldid в бинарник.
+slot5() {
+  python3 - "$1" <<'PYEOF2'
+import struct, sys
+try:
+    data = open(sys.argv[1], 'rb').read()
+    vals = struct.unpack('<8I', data[:32])
+    off = 32
+    for _ in range(vals[4]):
+        cmd, cmdsize = struct.unpack('<2I', data[off:off + 8])
+        if cmd == 0x1d:
+            doff, dsize = struct.unpack('<2I', data[off + 8:off + 16])
+            blob = data[doff:doff + dsize]
+            magic, length, count = struct.unpack('>3I', blob[:12])
+            if magic != 0xfade0cc0:
+                sys.exit(1)
+            for i in range(count):
+                typ, _o = struct.unpack('>2I', blob[12 + i * 8:12 + i * 8 + 8])
+                if typ == 5:
+                    sys.exit(0)
+            sys.exit(1)
+        off += cmdsize
+    sys.exit(1)
+except Exception:
+    sys.exit(1)
+PYEOF2
+}
+
+if codesign --force --sign "$SIGNID" --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/sign-err.log" && slot5 "$BIN"; then
+  echo "fake_sign: подписано identity ($SIGNID), слот 5 есть"
   codesign -dv "$APP_ABS" 2>&1 | head -n 5 || true
-else
-  warn "fake_sign: codesign identity не удался ($(head -c 500 "$WORK/sign-err.log")). Пробую ldid."
-  if command -v ldid >/dev/null 2>&1 || brew install ldid >/dev/null 2>&1; then
-    if ldid -S"$WORK/ent.plist" "$BIN" 2>"$WORK/ldid-err.log"; then
-      echo "fake_sign: подписано ldid с entitlements"
-    else
-      warn "fake_sign: ldid не удался ($(head -c 300 "$WORK/ldid-err.log")), откат на ad-hoc"
-      codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
-    fi
-  else
-    warn "fake_sign: нет ldid, откат на ad-hoc"
-    codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
-  fi
+  exit 0
 fi
+warn "fake_sign: identity не удался ($(head -c 300 "$WORK/sign-err.log")). Пробую ad-hoc+ent."
+
+if codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>"$WORK/adhoc-err.log" && slot5 "$BIN"; then
+  echo "fake_sign: подписано ad-hoc+entitlements, слот 5 есть"
+  exit 0
+fi
+warn "fake_sign: ad-hoc+ent не дал слот 5 ($(head -c 200 "$WORK/adhoc-err.log")). Пробую seal+ldid."
+
+codesign --force --sign - --deep --timestamp=none "$APP_ABS" >/dev/null 2>&1 || true
+if command -v ldid >/dev/null 2>&1 || brew install ldid >/dev/null 2>&1; then
+  if ldid -S"$WORK/ent.plist" "$BIN" 2>"$WORK/ldid-err.log" && slot5 "$BIN"; then
+    echo "fake_sign: seal+ldid, слот 5 есть"
+    exit 0
+  fi
+  warn "fake_sign: ldid не удался ($(head -c 300 "$WORK/ldid-err.log"))"
+else
+  warn "fake_sign: нет ldid"
+fi
+warn "fake_sign: остался голый ad-hoc без слота 5"
 exit 0
