@@ -101,11 +101,12 @@ fi
 
 sign_provision() {
   # $1 = backend (cms|smime). Возвращает 0 если plist реально внутри.
+  # -nodetach = opaque/attached подпись (без него получается detached без контента).
   if [ "$1" = "smime" ]; then
-    openssl smime -sign -binary -in "$WORK/prov.plist" -signer "$WORK/fake.cer" -inkey "$WORK/fake.key" \
+    openssl smime -sign -binary -nodetach -in "$WORK/prov.plist" -signer "$WORK/fake.cer" -inkey "$WORK/fake.key" \
       -outform DER -out "$WORK/embedded.mobileprovision" 2>/dev/null || return 1
   else
-    openssl cms -sign -binary -in "$WORK/prov.plist" -signer "$WORK/fake.cer" -inkey "$WORK/fake.key" \
+    openssl cms -sign -binary -nodetach -in "$WORK/prov.plist" -signer "$WORK/fake.cer" -inkey "$WORK/fake.key" \
       -outform DER -out "$WORK/embedded.mobileprovision" 2>/dev/null || return 1
   fi
   grep -a -q "$BUNDLE_ID" "$WORK/embedded.mobileprovision" 2>/dev/null
