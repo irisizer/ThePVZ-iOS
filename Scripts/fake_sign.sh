@@ -99,9 +99,24 @@ then
   exit 0
 fi
 
-if ! openssl cms -sign -binary -in "$WORK/prov.plist" -signer "$WORK/fake.cer" -inkey "$WORK/fake.key" \
-  -outform DER -out "$WORK/embedded.mobileprovision" 2>/dev/null; then
-  warn "fake_sign: cms-sign не удался, откат на ad-hoc"
+sign_provision() {
+  # $1 = backend (cms|smime). Возвращает 0 если plist реально внутри.
+  if [ "$1" = "smime" ]; then
+    openssl smime -sign -binary -in "$WORK/prov.plist" -signer "$WORK/fake.cer" -inkey "$WORK/fake.key" \
+      -outform DER -out "$WORK/embedded.mobileprovision" 2>/dev/null || return 1
+  else
+    openssl cms -sign -binary -in "$WORK/prov.plist" -signer "$WORK/fake.cer" -inkey "$WORK/fake.key" \
+      -outform DER -out "$WORK/embedded.mobileprovision" 2>/dev/null || return 1
+  fi
+  grep -a -q "$BUNDLE_ID" "$WORK/embedded.mobileprovision" 2>/dev/null
+}
+
+if sign_provision cms; then
+  echo "fake_sign: provision attached (cms)"
+elif sign_provision smime; then
+  echo "fake_sign: provision attached (smime fallback)"
+else
+  warn "fake_sign: provision без контента, откат на ad-hoc"
   codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
   exit 0
 fi
