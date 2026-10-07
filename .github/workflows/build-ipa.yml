@@ -1,0 +1,108 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: Запустить unit-тесты (дольше, тратит минуты)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      APP_NAME: ThePVZ
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+
+      - name: App icon (необязательно)
+        continue-on-error: true
+        run: swift Scripts/make_icon.swift
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build unsigned Release
+        run: |
+          set -o pipefail
+          FMT=cat
+          command -v xcbeautify >/dev/null && FMT=xcbeautify
+          xcodebuild -project ThePVZ.xcodeproj -scheme ThePVZ -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO CURRENT_PROJECT_VERSION=${{ github.run_number }} build 2>&1 | tee build.log | $FMT
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)
+          test -d $APP
+          rm -rf Payload && mkdir Payload && cp -R $APP Payload/
+          zip -qry $APP_NAME-${{ github.run_number }}.ipa Payload
+
+      - name: Smoke checks
+        run: |
+          set -euo pipefail
+          P=Payload/$APP_NAME.app
+          plutil -lint $P/Info.plist
+          lipo -archs $P/$APP_NAME | grep arm64
+          plutil -extract UIApplicationSceneManifest xml1 -o - $P/Info.plist > /dev/null
+          plutil -extract UILaunchScreen xml1 -o - $P/Info.plist > /dev/null
+          find $P -name pvz_screen.png | grep . || echo '::warning::pvz_screen.png не найден, будет запасная текстура'
+          ls -lh *.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ThePVZ-ipa-${{ github.run_number }}
+          path: '*.ipa'
+          if-no-files-found: error
+
+      - name: GitHub Release (только для тегов v*)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.ipa'
+
+      - name: Сводка ошибок
+        if: failure()
+        run: |
+          grep -E ' error: ' build.log | sort -u | head -n 80 || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+
+  tests:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_tests }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: command -v xcodegen >/dev/null || brew install xcodegen
+      - run: xcodegen generate
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          SIM=$(xcrun simctl list devices available | grep -m1 iPhone | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
+          xcodebuild test -project ThePVZ.xcodeproj -scheme ThePVZ -destination id=$SIM CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 150
