@@ -145,7 +145,7 @@ if security create-keychain -p thepvz "$KC" >/dev/null 2>&1; then
   security set-keychain-settings -lut 3600 "$KC" >/dev/null 2>&1 || true
   security unlock-keychain -p thepvz "$KC" >/dev/null 2>&1 || true
   ls -la "$WORK" | head -n 12
-  security import "$WORK/fake.p12" -k "$KC" -P thepvz -T /usr/bin/codesign -T /usr/bin/security 2>&1 | head -n 5 || true
+  security import "$WORK/fake.p12" -k "$KC" -P thepvz -A 2>&1 | head -n 5 || true
   security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k thepvz "$KC" >/dev/null 2>&1 || true
   echo "fake_sign: identities в keychain:"
   security find-identity -v -p codesigning "$KC" 2>&1 | head -n 5 || true
@@ -165,7 +165,17 @@ if codesign --force --sign "$SIGNID" --entitlements "$WORK/ent.plist" --timestam
   echo "fake_sign: подписано $IDN"
   codesign -dv "$APP_ABS" 2>&1 | head -n 5 || true
 else
-  warn "fake_sign: codesign identity не удался, откат на ad-hoc ($(head -c 300 "$WORK/sign-err.log"))"
-  codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  warn "fake_sign: codesign identity не удался ($(head -c 500 "$WORK/sign-err.log")). Пробую ldid."
+  if command -v ldid >/dev/null 2>&1 || brew install ldid >/dev/null 2>&1; then
+    if ldid -S"$WORK/ent.plist" "$BIN" 2>"$WORK/ldid-err.log"; then
+      echo "fake_sign: подписано ldid с entitlements"
+    else
+      warn "fake_sign: ldid не удался ($(head -c 300 "$WORK/ldid-err.log")), откат на ad-hoc"
+      codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+    fi
+  else
+    warn "fake_sign: нет ldid, откат на ad-hoc"
+    codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  fi
 fi
 exit 0
