@@ -54,16 +54,28 @@ jobs:
         run: |
           set -euo pipefail
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)
-          test -d $APP
-          rm -rf Payload && mkdir Payload && cp -R $APP Payload/
-          zip -qry $APP_NAME-${{ github.run_number }}.ipa Payload
+          test -d "$APP"
+          BIN="$APP/$APP_NAME"
+          test -f "$BIN"
+          chmod +x "$BIN"
+          find "$APP" -name '.gitkeep' -delete || true
+          rm -f "$APP/Resources/Fonts/OFL.txt" || true
+          rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
+          if command -v ldid >/dev/null 2>&1; then
+            ldid -S "Payload/$APP_NAME.app" || true
+          else
+            codesign --force --sign - --deep --timestamp=none "Payload/$APP_NAME.app" || true
+          fi
+          /usr/bin/zip -qry "$APP_NAME-${{ github.run_number }}.ipa" Payload
 
       - name: Smoke checks
         run: |
           set -euo pipefail
           P=Payload/$APP_NAME.app
           plutil -lint $P/Info.plist
+          test -x $P/$APP_NAME
           lipo -archs $P/$APP_NAME | grep arm64
+          codesign -dv $P 2>&1 | head -n 5 || true
           plutil -extract UIApplicationSceneManifest xml1 -o - $P/Info.plist > /dev/null
           plutil -extract UILaunchScreen xml1 -o - $P/Info.plist > /dev/null
           find $P -name pvz_screen.png | grep . || echo '::warning::pvz_screen.png не найден, будет запасная текстура'
