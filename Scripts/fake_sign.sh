@@ -142,7 +142,8 @@ if security create-keychain -p thepvz "$KC" >/dev/null 2>&1; then
   security list-keychains -d user -s "$KC" $OLDKC >/dev/null 2>&1 || true
   security set-keychain-settings -lut 3600 "$KC" >/dev/null 2>&1 || true
   security unlock-keychain -p thepvz "$KC" >/dev/null 2>&1 || true
-  security import "$WORK/fake.p12" -k "$KC" -P thepvz -T /usr/bin/codesign -T /usr/bin/security >/dev/null 2>&1 || true
+  ls -la "$WORK" | head -n 12
+  security import "$WORK/fake.p12" -k "$KC" -P thepvz -T /usr/bin/codesign -T /usr/bin/security 2>&1 | head -n 5 || true
   security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k thepvz "$KC" >/dev/null 2>&1 || true
   echo "fake_sign: identities в keychain:"
   security find-identity -v -p codesigning "$KC" 2>&1 | head -n 5 || true
