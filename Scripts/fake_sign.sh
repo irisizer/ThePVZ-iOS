@@ -59,7 +59,7 @@ if ! openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
   exit 0
 fi
 openssl x509 -in "$WORK/fake.cer" -outform DER -out "$WORK/fake.der" 2>/dev/null || true
-openssl pkcs12 -export -inkey "$WORK/fake.key" -in "$WORK/fake.cer" -out "$WORK/fake.p12" \
+openssl pkcs12 -export -legacy -inkey "$WORK/fake.key" -in "$WORK/fake.cer" -out "$WORK/fake.p12" \
   -passout pass:thepvz -name "$IDN" 2>/dev/null || true
 
 # 2. embedded.mobileprovision (XML plist -> CMS SignedData, как у Telegram).
