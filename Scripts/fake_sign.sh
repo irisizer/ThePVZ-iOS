@@ -15,7 +15,6 @@ BUNDLE_ID="${3:-com.esyle.thepvz}"
 TEAM="THEPVZ2024"
 IDN="Apple Distribution: ThePVZ FakeSign ($TEAM)"
 WORK=/tmp/thepvz-fakesign
-KC_PATH=/tmp/thepvz-fake.keychain-db
 
 warn() { echo "::warning::$1"; }
 
@@ -49,11 +48,14 @@ find "$APP_ABS" -name '.gitkeep' -delete 2>/dev/null || true
 rm -f "$APP_ABS/Resources/Fonts/OFL.txt" 2>/dev/null || true
 
 # 1. Ключ + самоподписной серт (тот же трюк с префиксом, что у Telegram).
+# Важно: EKU codeSigning, иначе codesign не видит identity ("no identity found").
 if ! openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
   -keyout "$WORK/fake.key" -out "$WORK/fake.cer" \
-  -subj "/CN=$IDN/OU=SELFSIGNED/C=US" >/dev/null 2>&1; then
+  -subj "/CN=$IDN/OU=SELFSIGNED/C=US" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=codeSigning" >/dev/null 2>&1; then
   warn "fake_sign: openssl req не удался, откат на ad-hoc"
-  codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
   exit 0
 fi
 openssl x509 -in "$WORK/fake.cer" -outform DER -out "$WORK/fake.der" 2>/dev/null || true
@@ -95,7 +97,11 @@ print('provision+entitlements written')
 PYEOF
 then
   warn "fake_sign: не собрал provision, откат на ad-hoc"
-  codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  if [ -f "$WORK/ent.plist" ]; then
+    codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  else
+    codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  fi
   exit 0
 fi
 
@@ -118,21 +124,28 @@ elif sign_provision smime; then
   echo "fake_sign: provision attached (smime fallback)"
 else
   warn "fake_sign: provision без контента, откат на ad-hoc"
-  codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  if [ -f "$WORK/ent.plist" ]; then
+    codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  else
+    codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  fi
   exit 0
 fi
 cp "$WORK/embedded.mobileprovision" "$APP_ABS/embedded.mobileprovision"
 
 # 3. Импорт в temp-keychain (как ImportCertificates.py у Telegram).
-security delete-keychain "$KC_PATH" >/dev/null 2>&1 || true
-if security create-keychain -p thepvz "$KC_PATH" >/dev/null 2>&1; then
+KC="thepvz-fake.keychain"
+security delete-keychain "$KC" >/dev/null 2>&1 || true
+if security create-keychain -p thepvz "$KC" >/dev/null 2>&1; then
   OLDKC=$(security list-keychains -d user 2>/dev/null | tr -d '"' | xargs)
   # shellcheck disable=SC2086
-  security list-keychains -d user -s "$KC_PATH" $OLDKC >/dev/null 2>&1 || true
-  security set-keychain-settings -lut 3600 "$KC_PATH" >/dev/null 2>&1 || true
-  security unlock-keychain -p thepvz "$KC_PATH" >/dev/null 2>&1 || true
-  security import "$WORK/fake.p12" -k "$KC_PATH" -P thepvz -T /usr/bin/codesign -T /usr/bin/security >/dev/null 2>&1 || true
-  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k thepvz "$KC_PATH" >/dev/null 2>&1 || true
+  security list-keychains -d user -s "$KC" $OLDKC >/dev/null 2>&1 || true
+  security set-keychain-settings -lut 3600 "$KC" >/dev/null 2>&1 || true
+  security unlock-keychain -p thepvz "$KC" >/dev/null 2>&1 || true
+  security import "$WORK/fake.p12" -k "$KC" -P thepvz -T /usr/bin/codesign -T /usr/bin/security >/dev/null 2>&1 || true
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k thepvz "$KC" >/dev/null 2>&1 || true
+  echo "fake_sign: identities в keychain:"
+  security find-identity -v -p codesigning "$KC" 2>&1 | head -n 5 || true
 else
   warn "fake_sign: keychain не создался, пробую login-keychain"
 fi
@@ -143,6 +156,6 @@ if codesign --force --sign "$IDN" --entitlements "$WORK/ent.plist" --timestamp=n
   codesign -dv "$APP_ABS" 2>&1 | head -n 5 || true
 else
   warn "fake_sign: codesign identity не удался, откат на ad-hoc ($(head -c 300 "$WORK/sign-err.log"))"
-  codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
+  codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
 fi
 exit 0
