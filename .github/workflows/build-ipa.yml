@@ -75,6 +75,29 @@ jobs:
           codesign -d --entitlements :- $P 2>&1 | head -n 20 || true
           test -f $P/embedded.mobileprovision
           test -d $P/_CodeSignature
+          python3 - "$P/$APP_NAME" <<'PYEOF'
+          import struct, sys
+          data = open(sys.argv[1], 'rb').read()
+          vals = struct.unpack('<8I', data[:32])
+          off = 32
+          found = False
+          for _ in range(vals[4]):
+              cmd, cmdsize = struct.unpack('<2I', data[off:off + 8])
+              if cmd == 0x1d:
+                  doff, dsize = struct.unpack('<2I', data[off + 8:off + 16])
+                  blob = data[doff:doff + dsize]
+                  magic, length, count = struct.unpack('>3I', blob[:12])
+                  for i in range(count):
+                      typ, _o = struct.unpack('>2I', blob[12 + i * 8:12 + i * 8 + 8])
+                      if typ == 5:
+                          found = True
+              off += cmdsize
+          if found:
+              print('smoke: slot 5 (entitlements) OK')
+          else:
+              print('::error::в бинарнике нет слота entitlements (как у Telegram). GBox такое не ставит.')
+              sys.exit(1)
+          PYEOF
           plutil -extract UIApplicationSceneManifest xml1 -o - $P/Info.plist > /dev/null
           plutil -extract UILaunchScreen xml1 -o - $P/Info.plist > /dev/null
           find $P -name pvz_screen.png | grep . || echo '::warning::pvz_screen.png не найден, будет запасная текстура'
