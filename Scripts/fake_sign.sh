@@ -53,14 +53,16 @@ if ! openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
   -keyout "$WORK/fake.key" -out "$WORK/fake.cer" \
   -subj "/CN=$IDN/OU=SELFSIGNED/C=US" \
   -addext "keyUsage=critical,digitalSignature" \
-  -addext "extendedKeyUsage=codeSigning" >/dev/null 2>&1; then
+  -addext "extendedKeyUsage=critical,emailProtection,codeSigning,anyExtendedKeyUsage" >/dev/null 2>&1; then
   warn "fake_sign: openssl req не удался, откат на ad-hoc"
   codesign --force --sign - --entitlements "$WORK/ent.plist" --timestamp=none "$APP_ABS" 2>/dev/null || codesign --force --sign - --deep --timestamp=none "$APP_ABS" || true
   exit 0
 fi
 openssl x509 -in "$WORK/fake.cer" -outform DER -out "$WORK/fake.der" 2>/dev/null || true
 openssl pkcs12 -export -legacy -inkey "$WORK/fake.key" -in "$WORK/fake.cer" -out "$WORK/fake.p12" \
-  -passout pass:thepvz -name "$IDN" 2>/dev/null || true
+  -passout pass: -name "$IDN" 2>/dev/null || true
+echo "fake_sign: cert extensions:"
+openssl x509 -in "$WORK/fake.cer" -noout -text 2>/dev/null | grep -A4 "Key Usage" | head -n 10 || true
 
 # 2. embedded.mobileprovision (XML plist -> CMS SignedData, как у Telegram).
 if ! python3 - "$BUNDLE_ID" "$TEAM" "$WORK" <<'PYEOF'
@@ -136,15 +138,15 @@ cp "$WORK/embedded.mobileprovision" "$APP_ABS/embedded.mobileprovision"
 # 3. Импорт в temp-keychain (как ImportCertificates.py у Telegram).
 KC="thepvz-fake.keychain"
 security delete-keychain "$KC" >/dev/null 2>&1 || true
-if security create-keychain -p thepvz "$KC" >/dev/null 2>&1; then
+if security create-keychain -p "" "$KC" >/dev/null 2>&1; then
   OLDKC=$(security list-keychains -d user 2>/dev/null | tr -d '"' | xargs)
   # shellcheck disable=SC2086
   security list-keychains -d user -s "$KC" $OLDKC >/dev/null 2>&1 || true
   security set-keychain-settings -lut 3600 "$KC" >/dev/null 2>&1 || true
-  security unlock-keychain -p thepvz "$KC" >/dev/null 2>&1 || true
+  security unlock-keychain -p "" "$KC" >/dev/null 2>&1 || true
   ls -la "$WORK" | head -n 12
-  security import "$WORK/fake.p12" -k "$KC" -P thepvz -T /usr/bin/codesign -T /usr/bin/security 2>&1 | head -n 5 || true
-  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k thepvz "$KC" >/dev/null 2>&1 || true
+  security import "$WORK/fake.p12" -k "$KC" -P "" -T /usr/bin/codesign -T /usr/bin/security 2>&1 | head -n 5 || true
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KC" >/dev/null 2>&1 || true
   echo "fake_sign: identities в keychain:"
   security find-identity -v -p codesigning "$KC" 2>&1 | head -n 5 || true
 else
